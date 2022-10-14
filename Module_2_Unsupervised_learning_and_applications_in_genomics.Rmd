@@ -1,0 +1,400 @@
+---
+title: 'compgen2021: Week 2 exercises'
+author: 'YUSUF ENES KAZCI'
+output:
+  pdf_document: default
+  pdf: default
+---
+
+# Exercises for Week2
+
+For this set of exercises we will be using the expression data shown below:
+```{r}
+
+
+expFile=system.file("extdata",
+                    "leukemiaExpressionSubset.rds",
+                    package="compGenomRData")
+mat=readRDS(expFile)
+
+```
+
+### Clustering
+
+1. We want to observe the effect of data transformation in this exercise. Scale the expression matrix with the `scale()` function. In addition, try taking the logarithm of the data with the `log2()` function prior to scaling. Make box plots of the unscaled and scaled data sets using the `boxplot()` function. [Difficulty: **Beginner/Intermediate**]
+
+**solution:**
+put your text here
+```{r,echo=TRUE}
+
+par(mfrow=c(1,2))
+
+boxplot(mat, main = "Unscaled data")
+boxplot(scale(mat), main = "scaled data")
+boxplot(log2(mat+1), main = "log2 transformed data")
+boxplot(scale(log2(mat+1)), main = "log2 transformed scaled data")
+ 
+
+```
+
+
+2. For the same problem above using the unscaled data and different data transformation strategies, use the `ward.d` distance in hierarchical clustering and plot multiple heatmaps. You can try to use the `pheatmap` library or any other library that can plot a heatmap with a dendrogram. Which data-scaling strategy provides more homogeneous clusters with respect to disease types? [Difficulty: **Beginner/Intermediate**]
+
+**solution:**
+put your text here
+```{r,echo=TRUE}
+
+## We form an annotation data frame to be used in pheatmap() fun:
+
+split_names <- unlist(strsplit(x = colnames(mat), split = "_")) 
+subtypes <- split_names[!grepl(pattern = "GSM", x = split_names)]
+annotation_df <- data.frame(row.names = colnames(mat), subtypes = subtypes)
+
+par(mfrow=c(1,1))
+
+pheatmap::pheatmap(mat = mat, annotation_col = annotation_df, 
+                   clustering_method = c("ward.D"), show_rownames = FALSE, 
+                   show_colnames = FALSE)
+
+pheatmap::pheatmap(mat = scale(mat), annotation_col = annotation_df, 
+                   clustering_method = c("ward.D"), show_rownames = FALSE, 
+                   show_colnames = FALSE)
+
+pheatmap::pheatmap(mat = log2(mat), annotation_col = annotation_df, 
+                   clustering_method = c("ward.D"), show_rownames = FALSE, 
+                   show_colnames = FALSE)
+
+pheatmap::pheatmap(mat = scale(log2(mat+1)), annotation_col = annotation_df, 
+                   clustering_method = c("ward.D"), show_rownames = FALSE, 
+                   show_colnames = FALSE)
+
+
+```
+
+
+3. For the transformed and untransformed data sets used in the exercise above, use the silhouette for deciding number of clusters using hierarchical clustering. [Difficulty: **Intermediate/Advanced**]
+
+**solution:**
+put your text here
+```{r,echo=TRUE}
+
+## Hierarrchical clustering with dist () function:
+
+hcluster_unscaled <- hclust(dist(x = t(mat), method = "euclidean"), 
+                            method = "ward.D")
+
+hcluster_scaled <- hclust(dist(x = t(scale(mat)), method = "euclidean"), 
+                          method = "ward.D")
+
+hcluster_log2_scaled <- hclust(dist(x = t(scale(log2(mat))), 
+                                    method = "euclidean"), method = "ward.D")
+
+
+
+### we will use cutree() function to output the desired number of clusters 
+# from the dist objects. Then, we will use the silhouette() function from the 
+# cluster package.
+
+
+library(cluster)
+
+
+### for unscaled data:
+
+Ks_unscaled <- sapply(2:7,
+function(i)
+summary(silhouette(cutree(hcluster_unscaled, k = i), dist(x = t(mat), 
+                                  method = "euclidean")))$avg.width)
+
+plot(2:7,Ks_unscaled,xlab="k",ylab="av. silhouette",type="b",
+pch=19)
+
+### for scaled data:
+
+Ks_scaled <- sapply(2:7,
+function(i)
+summary(silhouette(cutree(hcluster_scaled, k = i), dist(x = t(scale(mat)), 
+                                            method = "euclidean")))$avg.width) 
+
+plot(2:7,Ks_scaled,xlab="k",ylab="av. silhouette",type="b",
+pch=19)
+
+### for log2 transformed and scaled data:
+
+Ks_log_scaled <- sapply(2:7, 
+function(i)
+summary(silhouette(cutree(hcluster_log2_scaled, k = i), 
+                   dist(x = t(scale(log2(mat))), 
+                        method = "euclidean")))$avg.width)
+
+plot(2:7, Ks_log_scaled, xlab="k", ylab="av. silhouette", type = "b", pch=19)
+
+# ###Interpretation: A positive silhouette value for a data point in a cluster 
+# shows that it is well matched to its own cluster. According to plots, average 
+# silhouette value is highest for transformed and untransformed data when k = 4
+# clusters.
+ 
+```
+
+
+4. Now, use the Gap Statistic for deciding the number of clusters in hierarchical clustering. Is the same number of clusters identified by two methods? Is it similar to the number of clusters obtained using the k-means algorithm in the unsupervised learning chapter. [Difficulty: **Intermediate/Advanced**]
+
+**solution:**
+put your text here
+```{r,echo=TRUE}
+
+## Hierarrchical clustering with dist () function:
+
+hcluster_unscaled <- hclust(dist(x = t(mat), method = "euclidean"), 
+                            method = "ward.D")
+
+hcluster_scaled <- hclust(dist(x = t(scale(mat)), method = "euclidean"), 
+                          method = "ward.D")
+
+hcluster_log2_scaled <- hclust(dist(x = t(scale(log2(mat))), 
+                                    method = "euclidean"), method = "ward.D")
+
+
+library(cluster)
+
+### Gap statistics to decide the number of clusters  in hierarchical clustering.
+
+### For the untransformed data:
+
+set.seed(101)
+# define the clustering function
+hcl_fun <- function(x,k)
+list(cluster = cutree(hcluster_unscaled, k = k))
+ 
+# calculate the gap statistic
+gap_unscaled = clusGap(t(mat), FUN = hcl_fun, K.max = 8,B=50)
+
+# plot the gap statistic accross k values
+plot(gap_unscaled, main = "Gap statistic for the untransformed data")
+
+### For the scaled data:
+
+set.seed(101)
+# define the clustering function
+hcl_fun <- function(x,k)
+list(cluster = cutree(hcluster_scaled, k = k))
+ 
+# calculate the gap statistic
+gap_scaled= clusGap(t(scale(mat)), FUN = hcl_fun, K.max = 8,B=50)
+
+# plot the gap statistic accross k values
+plot(gap_scaled, main = "Gap statistic for the scaled data")
+
+
+### For log2 transformed and scaled data:
+
+set.seed(101)
+# define the clustering function
+hcl_fun <- function(x,k)
+list(cluster = cutree(hcluster_log2_scaled, k = k))
+ 
+# calculate the gap statistic
+gap_log2_scaled= clusGap(t(scale(log2(mat))), FUN = hcl_fun, K.max = 8,B=50)
+
+# plot the gap statistic accross k values
+plot(gap_log2_scaled, main = "Gap statistic for the log2 transformed data")
+
+### According to the plots, k = 8 seems best to be chosen as number of clusters.
+### There are five subtypes in the data. Thus, there might be some 
+# subpopulations in some subtypes. 
+
+### It is similar to the number of clusters obtained using k-means algorithm in 
+# the unsupervised learning chapter, which shows that k = 7 is the best option.
+
+
+```
+
+
+### Dimension reduction
+We will be using the leukemia expression data set again. You can use it as shown in the clustering exercises.
+
+1. Do PCA on the expression matrix using the `princomp()` function and then use the `screeplot()` function to visualize the explained variation by eigenvectors. How many top components explain 95% of the variation? [Difficulty: **Beginner**]
+
+**solution:**
+put your text here
+```{r,echo=TRUE}
+pca_data <- princomp(scale(mat))
+
+screeplot(x = pca_data)
+
+
+### To find how many top components do explain 95 % of variances:
+
+var_explained_df <- data.frame(PC= paste0("PC",1:60),
+                               var_explained=
+                                 (pca_data$sdev)^2/sum((pca_data$sdev)^2))
+
+for (i in c(1:nrow(var_explained_df))) {
+
+  if(sum(var_explained_df$var_explained[1:i]) > 0.95){
+
+    print(paste0("Top ",as.character(i),
+                 " PC components explains 95% variances")) 
+    
+  break
+    }
+}
+
+
+```
+
+
+2. Our next tasks are removing the eigenvectors and reconstructing the matrix using SVD, then we need to calculate the reconstruction error as the difference between the original and the reconstructed matrix. HINT: You have to use the `svd()` function and equalize eigenvalue to $0$ for the component you want to remove. [Difficulty: **Intermediate/Advanced**]
+
+**solution:**
+put your text here
+```{r,echo=TRUE}
+
+### we apply singular value decomposition on the transformed data matrix.
+
+s <- svd(x = scale(log2(mat+1)))
+
+
+
+s$v[,2] <- 0  ## we remove the second eigenvector.
+
+
+### we can also do the same change on the diagonal matrix as follows:
+# D <- diag(s$d) 
+# D[2,2] <- 0
+
+D <- diag(s$d)
+
+### Next, we use the formula " X = U D V' " to reconstruct the matrix.
+
+rec_mat_eig2 <- s$u %*% D %*% t(s$v) 
+
+## To obtain the reconstruction error, We calculate the residuals for each data 
+# points (X[i]-Y[i]).
+## Then we calculate the sum of the residual matrix.
+
+r_error_eig2 <- sum((scale(log2(mat+1)) - rec_mat_eig2)^2) ### reconstruction 
+# error.
+
+### Calculation of error with the removal of 5th eigenvector:
+
+s <- svd(x = scale(log2(mat+1)))
+
+s$v[,5] <- 0
+
+D <- diag(s$d)
+
+rec_mat_eig5 <- s$u %*% D %*% t(s$v) 
+
+r_error_eig5 <- sum((scale(log2(mat+1)) - rec_mat_eig5)^2)
+
+cat("Reconstruction error post removal of 5th:",
+as.character(round(r_error_eig5)), '\n', "whereas reconstruction error by the 
+removal of second eigenvector is ", as.character(round((r_error_eig2))),". ", 
+'\n',"Thus, eigenvector 5 contributes to more variation in the data.")
+
+```
+
+
+3. Produce a 10-component ICA from the expression data set. Remove each component and measure the reconstruction error without that component. Rank the components by decreasing reconstruction-error. [Difficulty: **Advanced**]
+
+**solution:**
+put your text here
+```{r,echo=TRUE}
+
+## We perform the Independent Component Analysis from fastICA package: 
+
+library(fastICA)
+
+set.seed(55)
+
+ica.res=fastICA(t(mat),n.comp=10)
+
+mat_centered <- ica.res$X ### fastICA() function initially centers the data by 
+# subtracting the mean of each column of the transposed matrix X 
+# (i.e. t(mat-rowMeans(mat))). This matrix will be used to calculate 
+# reconstruction error.
+
+e_s_mat <- ica.res$S  ### 	ica.res$S: estimated source matrix, whose columns 
+# include independent components. We keep its original version to be used in the 
+# iterative removal of components.
+
+r_error <- vector() ### calculated errors post removal of each components will
+# be stored in this vector.
+
+for (i in 1:10) {
+  
+ica.res$S[,i] <- 0 ### It removes the ith component from the estimated source
+# matrix.
+  
+rec_X <- ica.res$S %*% ica.res$A  ### The data matrix X is considered to be a 
+# linear combination of non-Gaussian (independent) components i.e. X = SA where 
+# columns of S contain the independent components and A is a linear mixing 
+# matrix.
+
+r_error <- c(r_error, sum((mat_centered - rec_X)^2))  
+
+ica.res$S <- e_s_mat ### equalise the source matrix to the unremoved one for 
+# next component removal.
+
+}
+
+IC_ordered <- paste0("IC",order(r_error, decreasing = TRUE))
+
+cat("Independent components by decreasing reconstruction-error are 
+       as follows: ", toString(IC_ordered), '\n', 
+       "The removal of the Independent component 10 results in highest error.")
+```
+
+
+4. In this exercise we use the `Rtsne()` function on the leukemia expression data set. Try to increase and decrease perplexity t-sne, and describe the observed changes in 2D plots. [Difficulty: **Beginner**]
+
+**solution:**
+put your text here
+```{r,echo=TRUE}
+
+library(Rtsne)
+
+
+set.seed(55) ### we set a random seed for reproducibility. 
+
+tsne_out_p5 <- Rtsne(X = t(scale(log2(mat+1))), perplexity = 5)
+
+tsne_out_p10 <- Rtsne(X = t(scale(log2(mat+1))), perplexity = 10)
+
+tsne_out_p15 <- Rtsne(X = t(scale(log2(mat+1))), perplexity = 15)
+
+par(mfrow = c(1,1))
+
+plot(tsne_out_p10$Y,col=as.factor(annotation_df$subtypes),
+pch=19, main = "perplexity = 10")
+ 
+legend("topleft",inset = .01,
+legend=unique(annotation_df$subtypes),
+fill =palette("default"),
+border=NA,box.col=NA)
+
+
+plot(tsne_out_p15$Y,col=as.factor(annotation_df$subtypes),
+pch=19, main = "perplexity = 15")
+
+legend("bottomleft",inset = .01,
+legend=unique(annotation_df$subtypes),
+fill =palette("default"),
+border=NA,box.col=NA)
+
+
+plot(tsne_out_p5$Y,col=as.factor(annotation_df$subtypes),
+pch=19, main = "perplexity = 5")
+
+legend("topleft",inset = .01,
+legend=unique(annotation_df$subtypes),
+fill =palette("default"),
+border=NA,box.col=NA)
+
+### When we increase perplexity value from 5 to 15, we obtain a higher
+### separation between AML, CML, NoL subtypes. 
+
+```
+
+
