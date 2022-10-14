@@ -1,0 +1,461 @@
+---
+title: 'compgen2021: Week 3 exercises'
+author: 'YUSUF ENES KAZCI'
+output:
+  pdf_document: default
+  pdf: default
+---
+
+# Exercises for Week 3
+
+
+### Classification 
+For this set of exercises we will be using the gene expression and patient annotation data from the glioblastoma patient. You can read the data as shown below:
+```{r}
+library(tidyverse)
+
+library(compGenomRData)
+
+# get file paths
+fileLGGexp <- system.file("extdata",
+                      "LGGrnaseq.rds",
+                      package="compGenomRData")
+fileLGGann <- system.file("extdata",
+                      "patient2LGGsubtypes.rds",
+                      package="compGenomRData")
+# gene expression values
+gexp <- readRDS(fileLGGexp)
+
+# patient annotation
+patient <- readRDS(fileLGGann)
+
+```
+
+1. Our first task is to not use any data transformation and do classification. Run the k-NN classifier on the data without any transformation or scaling. What is the effect on classification accuracy for k-NN predicting the CIMP and noCIMP status of the patient? [Difficulty: **Beginner**]
+
+**solution:**
+
+```{r, echo=TRUE}
+
+## we will use both untransformed and transformed versions of the data.
+
+log_scale_gexp <- scale(log10(gexp+1))
+
+#  we want patient names (observations) as rows so we transpose the matrices:
+tgexp <- t(gexp)  ## raw data.
+
+trs.g <- t(log_scale_gexp) ### transformed data.
+
+# we will subset the data to the columns having most variable genes:
+
+## we will get the indices of the 1000 columns with highest variances:
+
+topVars <- order(matrixStats::colVars(as.matrix(tgexp)), 
+                 decreasing = TRUE)[1:1000]
+
+### we subset the data to only these columns, excluding other genes.
+
+tgexp <- tgexp[,topVars] 
+
+### Same process for the transformed data:
+
+topVars_2 <- order(matrixStats::colVars(as.matrix(trs.g)), 
+                   decreasing = TRUE)[1:1000]
+
+trs.g <- trs.g[,topVars_2]
+
+
+### Adding subtype identities for the patients matching row.names:
+
+tgexp <- cbind(subtype=patient$subtype[match(row.names(tgexp), 
+                                             row.names(patient))], tgexp)  
+## cbind inherents the order of the column by its
+### arguement order.
+
+trs.g <- cbind(subtype=patient$subtype[match(row.names(trs.g), 
+                                             row.names(patient))], trs.g) 
+
+
+## NOT: matrix can only hold a single class so our subtypes are converted to 
+## numeric. We need to convert it to the factor class before feeding to train 
+## function.  
+
+set.seed(99) # set the random number seed for reproducibility 
+
+library(caret)
+
+# Setting up 5-fold cross validation
+
+trctrl <- trainControl(method = "cv",number = 5)
+
+# Training a k-NN model
+
+knn_fitTrs <- train(trs.g[,-1], ### Not: we can also use the formula interface 
+                    ### y~x
+                 as.factor(trs.g[,1]),### We convert the class of the subtype 
+# values to the factor, since classification method needs factor as outcome 
+# variables.
+                 method = "knn",
+                 trControl=trctrl,
+                 tuneGrid = data.frame(k=2:7)) # try k between 2-7
+
+# training k-NN model for the un-transformed data:
+knn_fit<- train(tgexp[,-1], 
+                 as.factor(tgexp[,1]), 
+                 method = "knn",
+                 trControl=trctrl,
+                 tuneGrid = data.frame(k=2:7))# try k between 2-7
+
+#  Assesment of maximum cross-validation accuracy for both:
+
+knn_fitTrs$results %>% filter(Accuracy %in% max(Accuracy))
+
+knn_fit$results %>% filter(Accuracy %in% max(Accuracy))
+
+
+### classification accuracy increased with pre-transformation of the data.
+### (accuracy is 0.94 whereas it is 0.83 for the untransformed predictors.
+```
+
+
+2. Bootstrap resampling can be used to measure the variability of the prediction error. Use bootstrap resampling with k-NN for the prediction accuracy. How different is it from cross-validation for different $k$s? [Difficulty: **Intermediate**]
+
+**solution:**
+
+```{r, echo=TRUE}
+set.seed(99)
+
+trctrl_bootstrap <- trainControl(method = "boot", number = 20, 
+                                 returnResamp="all")
+
+
+knn_bootstrap <- train(trs.g[,-1], 
+                 as.factor(trs.g[,1]), 
+                 method = "knn",
+                 trControl=trctrl_bootstrap,
+                 tuneGrid = data.frame(k=2:7)) # try k between 2-7
+
+### By passing a data.frame inside the tuneGrid argument in the train function,
+### we tune our models with parameters spesific to the method, "k" in this case.
+### This is a great flexibility of Caret package:) 
+
+knn_bootstrap$results %>% filter(Accuracy %in% max(Accuracy))
+
+### accuracy value to select the optimal model in bootstrap method is similar
+### to that of cross validation (0.937 vs 0.94). However, the final k values 
+## used for the models are different. k = 2 for the bootsrapping but k = 6 
+###for the cross validation.
+```
+
+
+3. There are a number of ways to get variable importance for a classification problem. Run random forests on the classification problem above. Compare the variable importance metrics from random forest and the one obtained from DALEX applied on the random forests model. How many variables are the same in the top 10? [Difficulty: **Advanced**]
+
+**solution:**
+
+```{r, echo=TRUE}
+set.seed(66)
+
+library(ranger)
+ 
+
+trctrl_rf <- trainControl(method = "cv",number = 5, classProb=TRUE)
+
+# we will now train random forest model
+
+outcome <- as.factor(patient$subtype[match(row.names(trs.g), 
+                                           row.names(patient))])
+
+rf_model_fit <- train(trs.g[,-1],
+                 outcome, 
+                 method="ranger",
+                 trControl=trctrl_rf,
+                 importance="impurity", # calculate importance
+                )
+
+varImp_df <- varImp(rf_model_fit)
+
+library(dplyr)
+
+### top 10 important variables with random forest:
+
+topten_rf <- varImp_df$importance[order(varImp_df$importance$Overall, 
+                                        decreasing = TRUE),, 
+                                  drop=FALSE] %>% head(10)
+
+### Obtaining variable importance metrics by DALEX package:
+
+library(DALEX)
+
+set.seed(66)
+# do permutation drop-out
+explainer_rf<- explain(rf_model_fit,
+label = "random forest",
+data =trs.g[,-1],
+y = as.numeric(outcome=="CIMP")) ###By deafult classification tasks 
+### support only numerical 'y' parameter but it is factor. We change it to 
+### a numerical vector with 0 and 1 values.
+
+vi_dalex <- feature_importance(explainer_rf,n_sample=50,type="difference")
+
+### Or following function can be used:
+
+### dalex_rf <- model_parts(explainer_rf, B = 5, type="ratio")
+
+### Plotting the top 10 variables:
+
+plot(varImp(rf_model_fit), top=10)
+
+plot(vi_dalex, max_vars=10) 
+
+### There are not any common variables in top 10 lists from both approaches.
+
+```
+
+
+4. Come up with a unified importance score by normalizing importance scores from random forests and DALEX, followed by taking the average of those scores. [Difficulty: **Advanced**]
+
+**solution:**
+
+```{r, echo=TRUE}
+
+### In the code above, we obtained variable importances from random
+### forest and DALEX and stored them in "varImp_df" and 
+### "vi_dalex" objects, respectively. We will use them to access and normalize 
+### the importance scores. Then, we will calculate the average of these scores.
+
+## Preparing the data frames for merging:
+
+RF_scores <-varImp_df$importance
+
+RF_df <- data.frame(var_names=row.names(RF_scores), RF_s=RF_scores$Overall)
+
+DALEX_scores <- as.data.frame(vi_dalex[,c(1,3)])
+
+dalex_df <- data.frame(var_names=DALEX_scores$variable, 
+                       dalex_s=DALEX_scores$dropout_loss)
+
+### Merging RF and DALEX scores by variable names:
+ 
+uni_imp_sc <- merge(RF_df, dalex_df, by="var_names")
+
+### Calculation of the normalized scores as min = 0 and max = 1:
+
+norm_values <- apply(X = uni_imp_sc[,-1],MARGIN = 2, 
+                     FUN = function(x) (x-min(x))/(max(x)-min(x)))
+
+### Average of the RF and dalex normalised scores: 
+
+uni_imp_sc$avg <- (norm_values[,1] + norm_values[,2])/2
+
+uni_imp_sc %>% head()
+
+```
+
+
+### Regression
+For this set of problems we will use the regression data set where we tried to predict the age of the sample from the methylation values. The data can be loaded as shown below: 
+```{r}
+# file path for CpG methylation and age
+fileMethAge <- system.file("extdata",
+                      "CpGmeth2Age.rds",
+                      package="compGenomRData")
+
+# read methylation-age table
+ameth <- readRDS(fileMethAge)
+```
+
+1. Run random forest regression and plot the importance metrics. [Difficulty: **Beginner**]
+
+**solution:**
+
+```{r, echo=TRUE}
+
+set.seed(55)
+
+### CpGs having less than 0.1 standard deviation are removed 
+### as a pre processing step:
+
+ameth <- ameth[,c(TRUE,matrixStats::colSds(as.matrix(ameth[,-1]))>0.1)]
+
+### a five fold cross validation is set up.
+
+trctrl <- trainControl(method = "cv",number=5) 
+
+# we will now train random forest model to predict the continuous age data:
+
+library(ranger)
+
+library(caret)
+
+rf_model <- train(y=ameth[,1],
+x = ameth[,-1],
+method = "ranger",
+trControl=trctrl,
+# calculate importance
+importance="permutation",
+tuneGrid = data.frame(mtry=50,
+min.node.size = 5,
+splitrule="variance")
+)
+
+### Plotting top 20 important variables:
+
+plot(varImp(rf_model), top = 20)
+
+
+```
+
+
+2. Split 20% of the methylation-age data as test data and run elastic net regression on the training portion to tune parameters and test it on the test portion. [Difficulty: **Intermediate**] 
+
+**solution:**
+
+```{r, echo=TRUE}
+
+
+### CpGs having less than 0.1 standard deviation are removed 
+### as a pre processing step:
+
+ameth <- ameth[,c(TRUE,matrixStats::colSds(as.matrix(ameth[,-1]))>0.1)]
+ 
+# 20% of the data is saved as test data and the remaining 80% will be used in
+# the training. Following code gets the indices for 80% of the methylation-age 
+# data from the output list object returned from the createDataPartition 
+# function in the caret package:
+
+intrain <- caret::createDataPartition(y = ameth[,1], p= 0.80)[[1]]
+
+# Select the rows with the indice vector and assign to tarining variable:
+training <- ameth[intrain,]
+
+# we assign the rest of the rows to the test variable:
+
+testing <- ameth[-intrain,]  ###20% of the methylation-age data as test data.
+
+library(caret)
+
+library(glmnet)
+
+set.seed(45)
+
+trctrl <- trainControl(method = "cv",number=10) ### a ten fold cross validation 
+### is set up.
+
+enetFit <- train(y=training[,1], x = training[,-1],
+method = "glmnet",
+trControl=trctrl,
+# alpha and lambda parameters to try
+tuneGrid = data.frame(alpha=0.5,
+lambda=seq(0.1,0.7,0.05)))
+
+# Best lambda and alpha values:
+
+enetFit$bestTune
+
+# Next, we will test the accuracy of our model:
+
+enet_res <- predict(enetFit,testing[,-1])
+
+# R-squared for the test set:
+
+(cor(x = enet_res, y = testing[,1]))^2 ## default method is Pearson correlation.
+
+# plot actual vs predicted age values from the model:
+
+plot(enet_res~testing[,1],
+pch=19,xlab="observed Age",
+ylab="GLM predicted Age")
+mtext(paste("R-squared",
+format((cor(x = enet_res, y = testing[,1]))^2,digits=2)))
+
+```
+
+
+3. Run an ensemble model for regression using the **caretEnsemble** or **mlr** package and compare the results with the elastic net and random forest model. Did the test accuracy increase?
+**HINT:** You need to install these extra packages and learn how to use them in the context of ensemble models. [Difficulty: **Advanced**] 
+
+**solution:**
+
+```{r, echo=TRUE}
+
+set.seed(45)
+
+library("caretEnsemble")
+
+model_list <- caretList(y=training[,1], x = training[,-1],
+  trControl=trctrl,
+  methodList=c("glmnet", "ranger")
+  )
+
+set.seed(45)
+
+ensemble <- caretEnsemble(
+model_list,
+trControl=trctrl)
+
+### Calculation of R squared values for Ensemble, Random Forest and Elastic Net
+## models:
+
+ensemble_res <- predict(ensemble,testing[,-1])
+
+Rsquared_ens <- (cor(x = ensemble_res , y = testing[,1]))^2
+
+rf_res <- predict(rf_model,testing[,-1]) ## Previously generated RF model
+
+Rsquared_rf <- (cor(x = rf_res , y = testing[,1]))^2
+
+enet_res <- predict(enetFit,testing[,-1]) ## Previously generated Elas-Net model
+
+Rsquared_ent <- (cor(x = enet_res, y = testing[,1]))^2 
+
+## Plots with Rsquared values for each model:
+
+plot(ensemble_res~testing[,1],
+pch=19,xlab="observed Age",
+ylab="Ensemble predicted Age")
+mtext(paste("R-squared",
+format(Rsquared_ens,digits=2)))
+
+plot(rf_res~testing[,1],
+pch=19,xlab="observed Age",
+ylab="Random Forest predicted Age")
+mtext(paste("R-squared",
+format(Rsquared_rf,digits=2)))
+
+plot(enet_res~testing[,1],
+pch=19,xlab="observed Age",
+ylab="Elastic Net predicted Age")
+mtext(paste("R-squared",
+format(Rsquared_ent,digits=2)))
+
+
+### RMSE calculation for the three regressors:
+
+RMSE_ens <- sqrt(mean((ensemble_res - testing[,1])^2)) ## Ensemble
+
+RMSE_ent <- sqrt(mean((enet_res - testing[,1])^2)) ## Elastic Net
+
+RMSE_RF <- sqrt(mean((rf_res - testing[,1])^2)) ## Random Forest
+
+
+
+### Summary table:
+
+compare_DF <- data.frame(models=c("RF", "Elastic Net", "Ensembl"), 
+                         RMSE=c(RMSE_RF,RMSE_ent, RMSE_ens), 
+                         Rsquared=c(Rsquared_rf,Rsquared_ent, Rsquared_ens))
+
+print(compare_DF)
+
+### The ensemble model did not increase the test accuracy.
+### Random forest model still has the highest test accuracy. 
+### According to CaretEnsemble vignette, an ensemble is useful especially
+### if the two models' predictions are uncorrelated. However, the modelCor
+### function from caret package shows that Random Forest and Elastic Net
+### models are fairly correlated and therefore ensemble approach did not
+### result in the desired increase in the test accuracy.
+
+modelCor(resamples(model_list))
+
+```
+
