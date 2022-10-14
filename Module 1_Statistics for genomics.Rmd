@@ -1,0 +1,529 @@
+---
+title: 'compgen2021: Week 1 exercises'
+author: "YUSUF ENES KAZCI"
+output:
+  pdf_document: default
+  pdf: default
+  html_document:
+    df_print: paged
+editor_options: 
+  markdown: 
+    wrap: 72
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Exercises for Week1
+
+## Statistics for genomics
+
+### How to summarize collection of data points: The idea behind statistical distributions
+
+1.  Calculate the means and variances of the rows of the following
+    simulated data set, and plot the distributions of means and
+    variances using `hist()` and `boxplot()` functions. [Difficulty:
+    **Beginner/Intermediate**]\
+
+```{r getDataChp3Ex}
+set.seed(100)
+
+#sample data matrix from normal distribution
+gset=rnorm(600,mean=200,sd=70)
+data=matrix(gset,ncol=6)
+
+mean_vector <- vector()
+variance_vector <- vector()
+
+for (i in c(1:nrow(data))) {
+  
+mean_vector <- c(mean_vector, mean(data[i,]))  
+variance_vector <- c(variance_vector, var(data[i,]))
+                   
+}
+
+hist(mean_vector)
+hist(variance_vector)
+boxplot(mean_vector)
+boxplot(variance_vector)
+```
+
+2.  Using the data generated above, calculate the standard deviation of
+    the distribution of the means using the `sd()` function. Compare
+    that to the expected standard error obtained from the central limit
+    theorem keeping in mind the population parameters were $\sigma=70$
+    and $n=6$. How does the estimate from the random samples change if
+    we simulate more data with
+    `data=matrix(rnorm(6000,mean=200,sd=70),ncol=6)`? [Difficulty:
+    **Beginner/Intermediate**]
+
+
+```{r}
+sd_of_means_small <- sd(mean_vector) 
+
+SEM_exact <- 70/sqrt(6)
+
+data_large <- matrix(rnorm(6000,mean=200,sd=70),ncol=6)
+
+mean_vector_large <- vector()
+
+for (i in c(1:nrow(data_large))) {
+  
+mean_vector_large <- c(mean_vector_large, mean(data_large[i,]))  
+                   
+}
+
+sd_of_means_large <- sd(mean_vector_large) 
+
+
+
+### Compare standart error of mean values for two data of different sizes:
+
+print(abs(sd_of_means_small - SEM_exact))
+
+print(abs(sd_of_means_large - SEM_exact))
+
+### they are similar.  When we simulate more data, it does not make any difference.
+## Standard error of the simulated data is always similar to the standard error obtained
+## by central limit theorem.
+
+```
+
+3.  Simulate 30 random variables using the `rpois()` function. Do this
+    1000 times and calculate the mean of each sample. Plot the sampling
+    distributions of the means using a histogram. Get the 2.5th and
+    97.5th percentiles of the distribution. [Difficulty:
+    **Beginner/Intermediate**]
+
+```{r exRpoisChp3}
+#HINT
+
+
+set.seed(100)
+
+#sample 30 values from poisson dist with lamda paramater =30
+
+mean_pois_vector <- vector()
+
+for (i in c(1:1000)) {
+
+  mean_pois_vector <- c(mean_pois_vector, mean(rpois(30,lambda=5)))
+    
+}
+
+hist(mean_pois_vector) ### sampling distribution of the means.
+
+quantile_95 <- quantile(mean_pois_vector, c(0.025, 0.975)) ## 95% confidence inetrval values.
+
+print(quantile_95)
+   
+```
+
+4.  Use the `t.test()` function to calculate confidence intervals of the
+    mean on the first random sample `pois1` simulated from the `rpois()`
+    function below. [Difficulty: **Intermediate**]
+
+```{r}
+
+set.seed(100)
+
+pois1=rpois(30,lambda=5)
+
+stats::t.test(pois1)
+
+
+```
+
+5.  Use the bootstrap confidence interval for the mean on `pois1`.
+    [Difficulty: **Intermediate/Advanced**]
+
+```{r}
+
+set.seed(100)
+
+pois1=rpois(30,lambda=5)
+
+mean_boot <- vector()
+
+iterate <- 1
+
+while (iterate <= 1000) {
+  
+  mean_boot <- c(mean_boot, mean(sample(pois1, replace=TRUE)))
+  
+  iterate <- iterate + 1
+  
+} 
+
+quantile_95_boot <- quantile(mean_boot, c(0.025, 0.975)) ## 95% confidence intervals. 
+
+hist(mean_boot)
+abline(v = c(quantile_95_boot[1:2]), col="red")
+text(x=quantile_95_boot[1],y=200,round(quantile_95_boot[1],3),adj=c(1,0))
+text(x=quantile_95_boot[2],y=200,round(quantile_95_boot[2],3),adj=c(0,0))
+
+```
+
+### How to test for differences in samples
+
+1.  Test the difference of means of the following simulated genes using
+    the randomization, `t-test()`, and `wilcox.test()` functions. Plot
+    the distributions using histograms and boxplots. [Difficulty:
+    **Intermediate/Advanced**]
+
+```{r exRnorm1chp3}
+set.seed(101)
+gene1=rnorm(30,mean=4,sd=3)
+gene2=rnorm(30,mean=3,sd=3)
+
+t.test(gene1,gene2)
+
+wilcox.test(gene1,gene2)
+
+org.diff=mean(gene1)-mean(gene2)
+
+gene.df=data.frame(exp=c(gene1,gene2), group=c(rep("test",30),rep("control",30)))
+
+library(mosaic)
+
+random_diffs <- vector()
+
+random <- 1
+
+while (random <=1000) {
+  
+  random_diffs <- c(random_diffs, diff(mosaic::mean(exp ~ shuffle(group), data=gene.df)))
+  
+  random <- random + 1
+  
+}
+
+
+hist(random_diffs,xlab="null distribution | no difference in samples",
+
+main=expression(paste(H[0]," :no difference in means")),
+
+xlim=c(-2,2),col="cornflowerblue",border="white")
+
+abline(v=quantile(random_diffs,0.95),col="red" )
+
+abline(v=org.diff,col="blue" )
+
+text(x=quantile(random_diffs,0.95),y=200,"0.05",adj=c(1,0),col="red")
+
+text(x=org.diff,y=200,"org. diff.",adj=c(1,0),col="blue")
+
+p.val=sum(random_diffs>org.diff)/length(random_diffs)
+
+### Boxplot of the distributions:
+
+boxplot(random_diffs)
+
+
+```
+
+2.  Test the difference of the means of the following simulated genes
+    using the randomization, `t-test()` and `wilcox.test()` functions.
+    Plot the distributions using histograms and boxplots. [Difficulty:
+    **Intermediate/Advanced**]
+
+```{r exRnorm2chp3}
+set.seed(100)
+gene1=rnorm(30,mean=4,sd=2)
+gene2=rnorm(30,mean=2,sd=2)
+
+t.test(gene1,gene2)
+
+wilcox.test(gene1,gene2)
+
+org.diff=mean(gene1)-mean(gene2)
+
+gene.df=data.frame(exp=c(gene1,gene2), group=c(rep("test",30),rep("control",30)))
+
+library(mosaic)
+
+random_diffs <- vector()
+
+random <- 1
+
+while (random <=1000) {
+  
+  random_diffs <- c(random_diffs, diff(mosaic::mean(exp ~ shuffle(group), data=gene.df))) ## it shuffles group labels and calculates means for each group.
+  
+  random <- random + 1
+  
+}
+
+
+hist(random_diffs,xlab="null distribution | no difference in samples",
+
+main=expression(paste(H[0]," :no difference in means")),
+
+xlim=c(-2,2),col="cornflowerblue",border="white")
+
+abline(v=quantile(random_diffs,0.95),col="red" )
+
+abline(v=org.diff,col="blue" )
+
+text(x=quantile(random_diffs,0.95),y=200,"0.05",adj=c(1,0),col="red")
+
+text(x=org.diff,y=200,"org. diff.",adj=c(1,0),col="blue")
+
+p.val=sum(random_diffs>org.diff)/length(random_diffs)
+
+### Boxplot of the distributions:
+
+boxplot(random_diffs)
+
+
+
+```
+
+3.  We need an extra data set for this exercise. Read the gene
+    expression data set as follows:
+    `gexpFile=system.file("extdata","geneExpMat.rds",package="compGenomRData") data=readRDS(gexpFile)`.
+    The data has 100 differentially expressed genes. The first 3 columns
+    are the test samples, and the last 3 are the control samples. Do a
+    t-test for each gene (each row is a gene), and record the p-values.
+    Then, do a moderated t-test, as shown in section "Moderated t-tests"
+    in this chapter, and record the p-values. Make a p-value histogram
+    and compare two approaches in terms of the number of significant
+    tests with the $0.05$ threshold. On the p-values use FDR (BH),
+    Bonferroni and q-value adjustment methods. Calculate how many
+    adjusted p-values are below 0.05 for each approach. [Difficulty:
+    **Intermediate/Advanced**]
+
+```{r}
+
+
+gexpFile <- system.file("extdata","geneExpMat.rds",package="compGenomRData") 
+
+data <- readRDS(gexpFile)
+
+test=1:3
+control=4:6
+
+# esimate t statistic without moderated variance:
+
+p_values <- vector()
+
+moderated_p_values <- vector()
+
+for (i in c(1:nrow(data))) {
+
+  p_values <- c(p_values, with(t.test(data[i,test], data[i,control], var.equal = TRUE), p.value))
+    
+}
+
+### Calculating moderated t test pvalues:
+
+n1=3  ### sample sizes
+n2=3
+
+dx=rowMeans(data[,test])-rowMeans(data[,control])
+
+library(matrixStats)
+
+# get the esimate of pooled variance
+stderr = sqrt( (rowVars(data[,test])*(n1-1) +
+rowVars(data[,control])*(n2-1)) / (n1+n2-2) * (1/n1 + 1/n2 ))
+
+# do the shrinking towards median
+mod.stderr = (stderr + median(stderr)) / 2 # moderation in variation
+
+# esimate t statistic with moderated variance
+t.mod <- dx / mod.stderr
+# calculate P-value of rejecting null
+p.mod = 2*pt( -abs(t.mod), n1+n2-2 )
+
+
+par(mfrow=c(1,2))
+hist(p_values,col="cornflowerblue",border="white",main="",xlab="P-values t-test")
+mtext(paste("signifcant tests:",sum(p_values < 0.05)) )
+
+hist(p.mod,col="cornflowerblue",border="white",main="",
+xlab="P-values mod. t-test")
+mtext(paste("signifcant tests:",sum(p.mod < 0.05)) )
+
+### Mutiple test corrections of p values:
+
+library(qvalue)
+
+### Comparison of adjusted p value distributions for default and moderated t tests:
+
+par(mfrow=c(1,2))
+
+## T-test vs moderated t-tests post BH adjustment:
+
+hist(p.adjust(p_values, method = c("BH")),col="cornflowerblue",border="white",main="",xlab="P-values t-test")
+mtext(paste("signifcant tests post BH:",sum((p.adjust(p_values, method = c("BH")) < 0.05))))
+
+hist(p.adjust(p.mod, method = c("BH")),col="cornflowerblue",border="white",main="",
+xlab="P-values mod. t-test post BH:")
+mtext(paste("signifcant tests post BH:",sum((p.adjust(p.mod, method = c("BH")) < 0.05))))
+
+## T-test vs moderated t-tests post bonferroni adjustment:
+
+hist(p.adjust(p_values, method = c("bonferroni")),col="cornflowerblue",border="white",main="",xlab="P-values t-test post bonferroni")
+mtext(paste("signifcant tests post bonferroni:",sum((p.adjust(p_values, method = c("bonferroni")) < 0.05))))
+
+
+hist(p.adjust(p.mod, method = c("bonferroni")),col="cornflowerblue",border="white",main="",
+xlab="P-values mod. t-test post bonferroni:")
+mtext(paste("signifcant tests post bonferroni:",sum((p.adjust(p.mod, method = c("bonferroni")) < 0.05))))
+
+## q values of T-test vs moderated t-tests :
+
+hist(qvalue(p_values)$qvalues,col="cornflowerblue",border="white",main="",xlab="P-values t-test post q value")
+mtext(paste("signifcant tests post q value:",sum((qvalue(p_values)$qvalues < 0.05))))
+
+
+hist(qvalue(p.mod)$qvalues,col="cornflowerblue",border="white",main="",
+xlab="P-values mod. t-test post q value:")
+mtext(paste("signifcant tests post q value:",sum((qvalue(p.mod)$qvalues < 0.05))))
+
+```
+
+### Relationship between variables: Linear models and correlation
+
+Below we are going to simulate X and Y values that are needed for the
+rest of the exercise.
+
+
+1.  Run the code then fit a line to predict Y based on X.
+    [Difficulty:**Intermediate**]
+
+```{r}
+
+# set random number seed, so that the random numbers from the text
+# is the same when you run the code.
+set.seed(32)
+
+# get 50 X values between 1 and 100
+x <-runif(50,1,100)
+
+# set b0,b1 and variance (sigma)
+b0 <-  10
+b1 <-  2
+sigma <-  20
+# simulate error terms from normal distribution
+eps <- rnorm(50,0,sigma)
+# get y values from the linear equation and addition of error terms
+y <- b0 + b1*x+ eps
+
+### Fitting a line to predict Y based on X values:
+
+lm(y~x)
+
+```
+
+2.  Plot the scatter plot and the fitted line.
+    [Difficulty:**Intermediate**]
+
+```{r}
+
+
+plot(y~x)
+abline(lm(y~x))
+
+```
+
+3.  Calculate correlation and R\^2. [Difficulty:**Intermediate**]
+
+```{r}
+
+cor(x,y, method = c("pearson"))
+
+summary(lm(y~x))$r.squared   ### R^2 value.
+
+
+```
+
+4.  Run the `summary()` function and try to extract P-values for the
+    model from the object returned by `summary`. See `?summary.lm`.
+    [Difficulty:**Intermediate/Advanced**]
+
+```{r}
+
+summary(lm(y~x))
+summary(lm(y~x))$coefficients [,c("Pr(>|t|)")][2] ### P value.
+
+
+```
+
+5.  Plot the residuals vs. the fitted values plot, by calling the
+    `plot()` function with `which=1` as the second argument. First
+    argument is the model returned by `lm()`. [Difficulty:**Advanced**]
+
+```{r}
+
+plot(lm(y~x), which=1)
+
+```
+
+6.  For the next exercises, read the data set histone modification data
+    set. Use the following to get the path to the file:
+
+```{=html}
+<!-- -->
+```
+    hmodFile=system.file("extdata",
+                        "HistoneModeVSgeneExp.rds",
+                         package="compGenomRData")
+
+There are 3 columns in the dataset. These are measured levels of
+H3K4me3, H3K27me3 and gene expression per gene. Once you read in the
+data, plot the scatter plot for H3K4me3 vs. expression.
+[Difficulty:**Beginner**]
+
+7.  Plot the scatter plot for H3K27me3 vs. expression.
+    [Difficulty:**Beginner**]
+
+```{r}
+
+hmodFile=system.file("extdata",
+                    "HistoneModeVSgeneExp.rds",
+                     package="compGenomRData")
+
+data <- readRDS(file = hmodFile)
+
+
+
+with(data = data, plot(H3k27me3~measured_log2))
+
+```
+
+8.  Fit the model for prediction of expression data using: 1) Only
+    H3K4me3 as explanatory variable, 2) Only H3K27me3 as explanatory
+    variable, and 3) Using both H3K4me3 and H3K27me3 as explanatory
+    variables. Inspect the `summary()` function output in each case,
+    which terms are significant. [Difficulty:**Beginner/Intermediate**]
+
+```{r}
+
+model_1 <- lm(data$measured_log2~data$H3k4me3) # Only H3K4me3 as explanatory variable.
+
+model_2 <- lm(data$measured_log2~data$H3k27me3) # Only H3K27me3 as explanatory variable.
+
+model_3 <- lm(data$measured_log2~data$H3k27me3 + data$H3k4me3) # Using both H3K4me3 and H3K27me3 as explanatory variables. 
+
+summary(model_1)
+summary(model_2)
+summary(model_3)
+
+
+```
+
+10. Is using H3K4me3 and H3K27me3 better than the model with only
+    H3K4me3? [Difficulty:**Intermediate**]
+
+```{r}
+
+### we can asses the accuracy of the both models by their Multiple R-squared values.
+## Using both H3K4me3 and H3K27me3 as explanatory variables gave 0.6723. Only using 
+## H3K4me3 resulted in 0.6511 as R^2. So, using both as explanatory variable to predict
+## response variables (i.e. gene expression abundances).
+
+
+```
